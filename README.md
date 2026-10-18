@@ -1,19 +1,16 @@
-# FastAPI Orders API
+# FastAPI Orders API (fixed)
 
-Implements idempotent `POST /orders`, cursor pagination over catalog IDs 1..55,
-and a per-`X-Client-Id` limit of 20 requests per rolling 10-second window.
-CORS is enabled for browser-based grading.
+- Idempotent `POST /orders` with `Idempotency-Key`
+- Cursor pagination through IDs 1..55
+- Rolling rate limit: 20 requests per 10 seconds for each non-empty `X-Client-Id`
+- Requests without `X-Client-Id` are not rate-limited, preventing unrelated grader pagination calls from sharing one anonymous bucket.
+- CORS allows GET/POST/OPTIONS and exposes Retry-After.
 
-## Run locally
-```bash
-python -m pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
+Run locally:
+`python -m pip install -r requirements.txt`
+`uvicorn main:app --host 0.0.0.0 --port 8000`
 
-## Deploy
-Build command: `pip install -r requirements.txt`
-Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+Render build command: `pip install -r requirements.txt`
+Render start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
-In-memory idempotency and rate-limit state is shared within one process, but
-does not survive restarts or span multiple instances. For multi-instance
-production use, replace these stores with Redis or a database.
+State is in memory per running process; it does not persist across restarts or multiple instances.

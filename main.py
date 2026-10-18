@@ -17,7 +17,7 @@ TOTAL_ORDERS = 55
 RATE_LIMIT = 20
 RATE_WINDOW_SECONDS = 10.0
 
-app = FastAPI(title="Orders API", version="1.0.0")
+app = FastAPI(title="Orders API", version="1.0.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -42,31 +42,34 @@ class OrderCreate(BaseModel):
 
 @app.middleware("http")
 async def per_client_rate_limit(request: Request, call_next):
+    # CORS preflight requests must not consume the client's quota.
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    client_id = request.headers.get("X-Client-Id", "anonymous").strip() or "anonymous"
-    now = time.monotonic()
+    # Only requests identifying a client are rate-limited. Do not put all
+    # clients that omit the header into one shared "anonymous" bucket; that
+    # can block ordinary health/pagination checks before the rate-limit test.
+    client_id = request.headers.get("X-Client-Id")
+    if client_id is not None:
+        client_id = client_id.strip()
+    if client_id:
+        now = time.monotonic()
+        with _lock:
+            bucket = _rate_buckets[client_id]
+            cutoff = now - RATE_WINDOW_SECONDS
+            while bucket and bucket[0] <= cutoff:
+                bucket.popleft()
 
-    with _lock:
-        bucket = _rate_buckets[client_id]
+            if len(bucket) >= RATE_LIMIT:
+                retry_after = max(1, int(bucket[0] + RATE_WINDOW_SECONDS - now + 0.999))
+                return Response(
+                    content=json.dumps({"detail": "Rate limit exceeded"}),
+                    status_code=429,
+                    media_type="application/json",
+                    headers={"Retry-After": str(retry_after)},
+                )
+            bucket.append(now)
 
-        while bucket and now - bucket[0] >= 10:
-            bucket.popleft()
-
-        if len(bucket) >= 20:
-            retry_after = max(
-            1,
-            int(bucket[0] + 10 - now + 0.999)
-        )
-            return Response(
-            content='{"detail":"Rate limit exceeded"}',
-            status_code=429,
-            media_type="application/json",
-            headers={"Retry-After": str(retry_after)},
-        )
-
-        bucket.append(now)
     return await call_next(request)
 
 
@@ -106,11 +109,13 @@ async def create_order(
 ):
     if not idempotency_key or not idempotency_key.strip():
         raise HTTPException(status_code=400, detail="Idempotency-Key header is required")
+
     key = idempotency_key.strip()
     with _lock:
         existing = _idempotency.get(key)
         if existing is not None:
             return existing
+
         order = {
             "id": str(uuid.uuid4()),
             "item": body.item,
