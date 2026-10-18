@@ -47,20 +47,26 @@ async def per_client_rate_limit(request: Request, call_next):
 
     client_id = request.headers.get("X-Client-Id", "anonymous").strip() or "anonymous"
     now = time.monotonic()
+
     with _lock:
         bucket = _rate_buckets[client_id]
-        cutoff = now - RATE_WINDOW_SECONDS
-        while bucket and bucket[0] <= cutoff:
-            bucket.popleft()
-        if len(bucket) >= RATE_LIMIT:
-            retry_after = max(1, int(bucket[0] + RATE_WINDOW_SECONDS - now + 0.999))
-            return Response(
-                content=json.dumps({"detail": "Rate limit exceeded"}),
-                status_code=429,
-                media_type="application/json",
-                headers={"Retry-After": str(retry_after)},
-            )
-        bucket.append(now)
+
+    while bucket and now - bucket[0] >= 10:
+        bucket.popleft()
+
+    if len(bucket) >= 20:
+        retry_after = max(
+            1,
+            int(bucket[0] + 10 - now + 0.999)
+        )
+        return Response(
+            content='{"detail":"Rate limit exceeded"}',
+            status_code=429,
+            media_type="application/json",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    bucket.append(now)
     return await call_next(request)
 
 
