@@ -18,14 +18,6 @@ RATE_LIMIT = 20
 RATE_WINDOW_SECONDS = 10.0
 
 app = FastAPI(title="Orders API", version="1.0.1")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Idempotency-Key", "X-Client-Id"],
-    expose_headers=["Retry-After"],
-)
 
 _lock = threading.Lock()
 _idempotency: dict[str, dict[str, Any]] = {}
@@ -141,6 +133,14 @@ async def list_orders(
     next_cursor = encode_cursor(next_offset) if next_offset < TOTAL_ORDERS else None
     return {"items": items, "next_cursor": next_cursor}
 
+app = CORSMiddleware(
+    app=app,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Idempotency-Key", "X-Client-Id"],
+    expose_headers=["Retry-After"],
+)
 
 if __name__ == "__main__":
     import uvicorn
