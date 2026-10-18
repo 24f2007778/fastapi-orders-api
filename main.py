@@ -51,22 +51,22 @@ async def per_client_rate_limit(request: Request, call_next):
     with _lock:
         bucket = _rate_buckets[client_id]
 
-    while bucket and now - bucket[0] >= 10:
-        bucket.popleft()
+        while bucket and now - bucket[0] >= 10:
+            bucket.popleft()
 
-    if len(bucket) >= 20:
-        retry_after = max(
+        if len(bucket) >= 20:
+            retry_after = max(
             1,
             int(bucket[0] + 10 - now + 0.999)
         )
-        return Response(
+            return Response(
             content='{"detail":"Rate limit exceeded"}',
             status_code=429,
             media_type="application/json",
             headers={"Retry-After": str(retry_after)},
         )
 
-    bucket.append(now)
+        bucket.append(now)
     return await call_next(request)
 
 
