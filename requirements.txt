@@ -1,1 +1,2 @@
-fastapi\nuvicorn[standard]\n
+fastapi
+uvicorn[standard]
